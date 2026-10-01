@@ -1,30 +1,31 @@
+
+name: Node.js CI CD Pipeline
+
 on:
   push:
     branches:
       - main
-
   pull_request:
     branches:
       - main
-
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build-and-test:
-    name: Build and Test Node.js Application
+  build:
+    name: Build and Test
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: 24
           cache: npm
 
       - name: Install Dependencies
@@ -38,3 +39,55 @@ jobs:
 
       - name: Verify Build
         run: test -f dist/app.js
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodejs-app
+          path: dist/
+
+  deploy:
+    name: Deploy to EC2
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nodejs-app
+          path: dist/
+
+      - name: Configure SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Copy Application to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          scp -i ~/.ssh/id_rsa -r dist \
+            "$EC2_USERNAME@$EC2_HOST:/home/ubuntu/nodejs-ci-demo/"
+
+      - name: Restart Application
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          ssh -i ~/.ssh/id_rsa \
+            "$EC2_USERNAME@$EC2_HOST" \
+            'cd /home/ubuntu/nodejs-ci-demo &&
+             if pm2 describe nodejs-app >/dev/null 2>&1; then
+               pm2 restart nodejs-app
+             else
+               pm2 start dist/app.js --name nodejs-app
+             fi &&
+             pm2 save'
