@@ -1,0 +1,2 @@
+- name: Debug OIDC Claims
+  uses: github/actions-oidc-debugger@v1
