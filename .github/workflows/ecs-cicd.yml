@@ -16,15 +16,18 @@ permissions:
   id-token: write
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION }}
-  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-  ECS_SERVICE: ${{ vars.ECS_SERVICE }}
-  ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
-  ECS_TASK_DEFINITION: ${{ vars.ECS_TASK_DEFINITION }}
-  CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: nodejs-ci-demo
+  ECS_SERVICE: nodejs-service
+  ECS_CLUSTER: nodejs-cluster
+  ECS_TASK_DEFINITION: .aws/task-definition.json
+  CONTAINER_NAME: nodejs-app
 
 jobs:
 
+  # ==========================================
+  # BUILD & TEST
+  # ==========================================
   build:
     name: Build and Test
     runs-on: ubuntu-latest
@@ -50,9 +53,14 @@ jobs:
         run: npm run build
 
       - name: Verify Build
-        run: test -f dist/app.js
+        run: |
+          test -f dist/app.js
+          echo "Build verified successfully"
 
 
+  # ==========================================
+  # DOCKER + ECR + ECS DEPLOY
+  # ==========================================
   deploy:
     name: Build Docker Image and Deploy to ECS
     needs: build
@@ -64,43 +72,77 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+
+      # ------------------------------------------
+      # AWS OIDC LOGIN
+      # ------------------------------------------
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::149935825228:role/GitHubActions-ECS-Deploy
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ap-south-1
 
+
+      # ------------------------------------------
+      # LOGIN TO ECR
+      # ------------------------------------------
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+
+      # ------------------------------------------
+      # BUILD & PUSH DOCKER IMAGE
+      # ------------------------------------------
       - name: Build, Tag and Push Docker Image
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: nodejs-ci-demo
           IMAGE_TAG: ${{ github.sha }}
+
         run: |
+          echo "========================================"
+          echo "Building Docker Image"
+          echo "========================================"
+
           echo "ECR Registry: $ECR_REGISTRY"
           echo "ECR Repository: $ECR_REPOSITORY"
           echo "Image Tag: $IMAGE_TAG"
 
-          docker build -f dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker build \
+            -f dockerfile \
+            -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
+            .
 
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "Docker build successful"
 
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+          echo "Docker push successful"
+
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+
+      # ------------------------------------------
+      # RENDER ECS TASK DEFINITION
+      # ------------------------------------------
       - name: Render ECS Task Definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: ${{ env.ECS_TASK_DEFINITION }}
-          container-name: ${{ env.CONTAINER_NAME }}
+          task-definition: .aws/task-definition.json
+          container-name: nodejs-app
           image: ${{ steps.build-image.outputs.image }}
 
+
+      # ------------------------------------------
+      # DEPLOY TO ECS
+      # ------------------------------------------
       - name: Deploy to Amazon ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: ${{ env.ECS_SERVICE }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          wait-for-service-stability: truec
+          service: nodejs-service
+          cluster: nodejs-cluster
+          wait-for-service-stability: true
