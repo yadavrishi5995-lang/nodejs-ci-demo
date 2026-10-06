@@ -98,7 +98,7 @@ jobs:
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: nodejs-ci-demo
+          ECR_REPOSITORY: nodejs-ecs-demo
           IMAGE_TAG: ${{ github.sha }}
 
         run: |
