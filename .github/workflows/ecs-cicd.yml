@@ -17,7 +17,7 @@ permissions:
 
 env:
   AWS_REGION: ap-south-1
-  ECR_REPOSITORY: nodejs-ci-demo
+  ECR_REPOSITORY: nodejs-ecs-demo
   ECS_SERVICE: nodejs-service
   ECS_CLUSTER: nodejs-cluster
   ECS_TASK_DEFINITION: .aws/task-definition.json
