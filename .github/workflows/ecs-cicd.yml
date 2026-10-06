@@ -79,7 +79,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:ecr:ap-south-1:149935825228:repository/nodejs-ecs-demo
+          role-to-assume: arn:aws:iam::149935825228:role/GitHubActions-ECS-Deploy
           aws-region: ap-south-1
 
 
